@@ -10,6 +10,15 @@ st.set_page_config(page_title="سامانه آموزشی پُل", page_icon="�
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "school.db")
 
+# Automatically initialize database if it doesn't exist or is empty
+if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
+    try:
+        import school_db
+        school_db.init_db()
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error initializing database: {e}")
+
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
