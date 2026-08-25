@@ -15,6 +15,7 @@ if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
     try:
         import school_db
         school_db.init_db()
+        school_db.seed_data()
     except Exception as e:
         import streamlit as st
         st.error(f"Error initializing database: {e}")
@@ -172,62 +173,194 @@ else:
         ])
         
         if menu == "📂 مدیریت کاربران و اکسل":
-            st.header("📂 مدیریت دسته‌جمعی کاربران")
+            st.header("📂 مدیریت و پورتال کاربران")
             
-            st.subheader("۱. درون‌ریزی دانش‌آموزان با فایل اکسل")
-            st.write("شما می‌توانید کل لیست دانش‌آموزان را به همراه کلاس و پایه در قالب یک فایل اکسل آپلود کنید. سامانه به صورت خودکار پورتال اولیای مربوطه را نیز می‌سازد.")
+            # Creating Tabs for User Management
+            tab1, tab2, tab3, tab4 = st.tabs([
+                "📥 درون‌ریزی دسته‌جمعی (اکسل)", 
+                "➕ تعریف کاربر جدید (تکی)", 
+                "🔑 مدیریت و تغییر رمزها", 
+                "👤 تغییر رمز من (مدیر)"
+            ])
             
-            # Download template
-            template_path = os.path.join(os.path.dirname(__file__), "excel_template.xlsx")
-            if os.path.exists(template_path):
-                with open(template_path, "rb") as f:
-                    st.download_button("📥 دانلود فایل نمونه اکسل (Template)", f, "excel_template.xlsx")
+            with tab1:
+                st.subheader("۱. درون‌ریزی دانش‌آموزان با فایل اکسل")
+                st.write("شما می‌توانید کل لیست دانش‌آموزان را به همراه کلاس و پایه در قالب یک فایل اکسل آپلود کنید. سامانه به صورت خودکار پورتال اولیای مربوطه را نیز می‌سازد.")
+                
+                # Download template
+                template_path = os.path.join(os.path.dirname(__file__), "excel_template.xlsx")
+                if os.path.exists(template_path):
+                    with open(template_path, "rb") as f_template:
+                        st.download_button("📥 دانلود فایل نمونه اکسل (Template)", f_template, "excel_template.xlsx")
+                
+                uploaded_file = st.file_uploader("فایل اکسل خود را انتخاب کنید", type=["xlsx"])
+                if uploaded_file is not None:
+                    try:
+                        df = pd.read_excel(uploaded_file)
+                        st.write("**پیش‌نمایش اطلاعات فایل آپلود شده:**")
+                        st.dataframe(df)
+                        
+                        if st.button("🚀 شروع درون‌ریزی دانش‌آموزان و ساخت پورتال اولیا"):
+                            conn = get_connection()
+                            cursor = conn.cursor()
+                            success_count = 0
+                            for idx, row in df.iterrows():
+                                fullname = row.get("نام و نام خانوادگی", "").strip()
+                                username = str(row.get("نام کاربری", "")).strip()
+                                class_id = str(row.get("کلاس", "")).strip()
+                                grade = int(row.get("پایه", 9))
+                                password = str(row.get("رمز عبور", "123")).strip()
+                                
+                                if fullname and username:
+                                    try:
+                                        cursor.execute("INSERT INTO users (username, password, role, name) VALUES (?, ?, 'student', ?)", (username, password, fullname))
+                                        student_id = cursor.lastrowid
+                                        cursor.execute("INSERT INTO students (id, class_id, grade) VALUES (?, ?, ?)", (student_id, class_id, grade))
+                                        
+                                        # Create parent user
+                                        p_username = f"p_{username}"
+                                        p_fullname = f"ولیِ {fullname}"
+                                        cursor.execute("INSERT INTO users (username, password, role, name) VALUES (?, ?, 'parent', ?)", (p_username, password, p_fullname))
+                                        success_count += 1
+                                    except Exception as e:
+                                        pass
+                            conn.commit()
+                            conn.close()
+                            st.success(f"موفقیت‌آمیز! تعداد {success_count} دانش‌آموز جدید و اولیای آن‌ها با موفقیت اضافه شدند!")
+                            st.rerun()
+                    except Exception as e:
+                        st.error(f"خطا در خواندن فایل اکسل: {e}")
             
-            uploaded_file = st.file_uploader("فایل اکسل خود را انتخاب کنید", type=["xlsx"])
-            if uploaded_file is not None:
-                try:
-                    df = pd.read_excel(uploaded_file)
-                    st.write("**پیش‌نمایش اطلاعات فایل آپلود شده:**")
-                    st.dataframe(df)
+            with tab2:
+                st.subheader("۲. تعریف تک‌به‌تک و دستی کاربر جدید")
+                st.write("از این قسمت می‌توانید همکاران (دبیران)، دانش‌آموزان یا مدیران جدید را به صورت تکی تعریف کنید:")
+                
+                with st.form("create_user_form_v4", clear_on_submit=True):
+                    new_name = st.text_input("نام و نام خانوادگی")
+                    new_username = st.text_input("نام کاربری (انگلیسی)")
+                    new_password = st.text_input("رمز عبور")
+                    new_role = st.selectbox("نقش کاربر جدید", ["دانش‌آموز (student)", "دبیر (teacher)", "مدیر (admin)"])
                     
-                    if st.button("🚀 شروع درون‌ریزی دانش‌آموزان و ساخت پورتال اولیا"):
-                        conn = get_connection()
-                        cursor = conn.cursor()
-                        success_count = 0
-                        for idx, row in df.iterrows():
-                            fullname = row.get("نام و نام خانوادگی", "").strip()
-                            username = str(row.get("نام کاربری", "")).strip()
-                            class_id = str(row.get("کلاس", "")).strip()
-                            grade = int(row.get("پایه", 9))
-                            password = str(row.get("رمز عبور", "123")).strip()
+                    st.markdown("---")
+                    st.write("⚠️ تکمیل اطلاعات زیر فقط در صورت انتخاب نقش **دانش‌آموز** الزامی است:")
+                    class_id = st.text_input("کلاس (مثلاً 9-1)", value="9-1")
+                    grade = st.selectbox("پایه تحصیلی", [7, 8, 9], index=2)
+                    
+                    submit_user = st.form_submit_button("➕ ثبت کاربر جدید در سامانه")
+                    if submit_user:
+                        if new_name and new_username and new_password:
+                            role_map = {
+                                "دانش‌آموز (student)": "student",
+                                "دبیر (teacher)": "teacher",
+                                "مدیر (admin)": "admin"
+                            }
+                            role_db = role_map[new_role]
+                            conn = get_connection()
+                            cursor = conn.cursor()
+                            try:
+                                cursor.execute("INSERT INTO users (username, password, role, name) VALUES (?, ?, ?, ?)", (new_username, new_password, role_db, new_name))
+                                new_user_id = cursor.lastrowid
+                                
+                                if role_db == "student":
+                                    cursor.execute("INSERT INTO students (id, class_id, grade) VALUES (?, ?, ?)", (new_user_id, class_id, grade))
+                                    # Create parent
+                                    p_username = f"p_{new_username}"
+                                    p_fullname = f"ولیِ {new_name}"
+                                    cursor.execute("INSERT INTO users (username, password, role, name) VALUES (?, ?, 'parent', ?)", (p_username, new_password, p_fullname))
+                                
+                                conn.commit()
+                                st.success(f"کاربر جدید '{new_name}' با نقش {new_role} با موفقیت ثبت شد!")
+                            except sqlite3.IntegrityError:
+                                st.error("خطا: این نام کاربری قبلاً در سامانه استفاده شده است!")
+                            except Exception as e:
+                                st.error(f"خطا در ثبت کاربر: {e}")
+                            finally:
+                                conn.close()
+                        else:
+                            st.warning("لطفاً تمام کادرهای الزامی را پر کنید.")
+            
+            with tab3:
+                st.subheader("۳. مدیریت کاربران و ویرایش یا تغییر آنلاین رمزها")
+                st.write("کاربر مورد نظر خود را از لیست زیر انتخاب کرده و اطلاعات یا رمز عبور او را تغییر دهید:")
+                
+                conn = get_connection()
+                df_edit_users = pd.read_sql_query("SELECT id, name, username, role FROM users ORDER BY id DESC", conn)
+                conn.close()
+                
+                user_options = {f"{row['name']} ({row['username']} - {row['role']})": row['id'] for idx, row in df_edit_users.iterrows()}
+                selected_user_str = st.selectbox("🎯 انتخاب کاربر جهت ویرایش:", list(user_options.keys()))
+                
+                if selected_user_str:
+                    selected_id = user_options[selected_user_str]
+                    conn = get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (selected_id,))
+                    user_data = cursor.fetchone()
+                    conn.close()
+                    
+                    if user_data:
+                        st.write(f"✍️ **ویرایش حساب:** {user_data['name']} (نقش: {user_data['role'].upper()})")
+                        with st.form(f"edit_user_form_{selected_id}"):
+                            edit_name = st.text_input("نام و نام خانوادگی", value=user_data['name'])
+                            edit_username = st.text_input("نام کاربری (انگلیسی)", value=user_data['username'])
+                            edit_password = st.text_input("رمز عبور جدید", value=user_data['password'])
                             
-                            if fullname and username:
-                                # Create student user
-                                try:
-                                    cursor.execute("INSERT INTO users (username, password, role, name) VALUES (?, ?, 'student', ?)", (username, password, fullname))
-                                    student_id = cursor.lastrowid
-                                    cursor.execute("INSERT INTO students (id, class_id, grade) VALUES (?, ?, ?)", (student_id, class_id, grade))
-                                    
-                                    # Create parent user
-                                    p_username = f"p_{username}"
-                                    p_fullname = f"ولیِ {fullname}"
-                                    cursor.execute("INSERT INTO users (username, password, role, name) VALUES (?, ?, 'parent', ?)", (p_username, password, p_fullname))
-                                    success_count += 1
-                                except Exception as e:
-                                    pass # Ignore duplicates or db errors for now
-                        conn.commit()
-                        conn.close()
-                        st.success(f"موفقیت‌آمیز! تعداد {success_count} دانش‌آموز جدید و اولیای آن‌ها با موفقیت به سامانه پُل اضافه شدند!")
-                except Exception as e:
-                    st.error(f"خطا در خواندن فایل اکسل: {e}")
+                            update_btn = st.form_submit_button("💾 ذخیره تغییرات کاربر")
+                            if update_btn:
+                                if edit_name and edit_username and edit_password:
+                                    conn = get_connection()
+                                    cursor = conn.cursor()
+                                    try:
+                                        cursor.execute("UPDATE users SET name = ?, username = ?, password = ? WHERE id = ?", (edit_name, edit_username, edit_password, selected_id))
+                                        conn.commit()
+                                        st.success(f"اطلاعات کاربر '{edit_name}' با موفقیت بروزرسانی شد!")
+                                        st.rerun()
+                                    except sqlite3.IntegrityError:
+                                        st.error("خطا: این نام کاربری قبلاً در سامانه استفاده شده است!")
+                                    except Exception as e:
+                                        st.error(f"خطا در ذخیره تغییرات: {e}")
+                                    finally:
+                                        conn.close()
+                                else:
+                                    st.warning("کادرها نباید خالی باشند.")
+                
+                st.markdown("---")
+                st.write("📊 **لیست زنده کل کاربران ثبت‌شده در سامانه:**")
+                st.dataframe(df_edit_users)
             
-            # Show list of users
-            st.subheader("۲. لیست معلمان و کاربران")
-            conn = get_connection()
-            df_users = pd.read_sql_query("SELECT id, name, username, role FROM users", conn)
-            conn.close()
-            st.dataframe(df_users)
-            
+            with tab4:
+                st.subheader("۴. تغییر نام کاربری و رمز عبور شما (مدیر)")
+                st.write("از این فرم می‌توانید به عنوان مدیر اصلی، اطلاعات ورود خود را شخصی‌سازی و امن کنید:")
+                
+                with st.form("admin_self_edit_v4"):
+                    admin_id = st.session_state.user['id']
+                    admin_name = st.text_input("نام نمایش‌داده‌شده شما در سایت", value=st.session_state.user['name'])
+                    admin_username = st.text_input("نام کاربری مدیر (جهت ورود)", value=st.session_state.user['username'])
+                    admin_password = st.text_input("رمز عبور جدید مدیر", value=st.session_state.user['password'])
+                    
+                    submit_admin_self = st.form_submit_button("💾 ثبت نهایی تغییرات مدیر")
+                    if submit_admin_self:
+                        if admin_name and admin_username and admin_password:
+                            conn = get_connection()
+                            cursor = conn.cursor()
+                            try:
+                                cursor.execute("UPDATE users SET name = ?, username = ?, password = ? WHERE id = ?", (admin_name, admin_username, admin_password, admin_id))
+                                conn.commit()
+                                # Update current session
+                                st.session_state.user['name'] = admin_name
+                                st.session_state.user['username'] = admin_username
+                                st.session_state.user['password'] = admin_password
+                                st.success("مشخصات ورود مدیریت با موفقیت امن و بروزرسانی شد!")
+                                st.rerun()
+                            except sqlite3.IntegrityError:
+                                st.error("خطا: این نام کاربری قبلاً در سامانه استفاده شده است!")
+                            except Exception as e:
+                                st.error(f"خطا در بروزرسانی: {e}")
+                            finally:
+                                conn.close()
+                        else:
+                            st.warning("پر کردن تمامی کادرها الزامی است.")
+
         elif menu == "📢 تابلوی اعلانات و بخشنامه‌ها":
             st.header("📢 تابلوی اعلانات و بخشنامه‌ها")
             
