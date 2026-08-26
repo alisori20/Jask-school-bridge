@@ -569,21 +569,6 @@ st.set_page_config(page_title="مدرسه هوشمند پُل", page_icon="🎓"
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "school.db")
 
-# Automatically initialize database if it doesn't exist or is empty
-if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
-    try:
-        import school_db
-        school_db.init_db()
-    except Exception as e:
-        import streamlit as st
-        st.error(f"Error initializing database: {e}")
-
-try:
-    upgrade_db_schema()
-except Exception as e:
-    st.error(f"Error upgrading database: {e}")
-
-
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -603,7 +588,6 @@ def clean_and_validate_national_id(code):
     if code.startswith('p_') and re.match(r'^\d{10}$', code[2:]):
         return code
     return None
-
 
 def upgrade_db_schema():
     conn = get_connection()
@@ -688,6 +672,20 @@ def get_school_theme():
     except Exception:
         pass
     return "آبی هوشمند"
+
+# Automatically initialize database if it doesn't exist or is empty
+if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
+    try:
+        import school_db
+        school_db.init_db()
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error initializing database: {e}")
+
+try:
+    upgrade_db_schema()
+except Exception as e:
+    st.error(f"Error upgrading database: {e}")
 
 
 # Custom styling for RTL and Persian fonts with Happy, Smart, and Professional theme support
